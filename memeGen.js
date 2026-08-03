@@ -529,9 +529,10 @@ return decodeURIComponent(seg)
 const TEMPLATE_DIR = path.join(__dirname, 'site', 'meme-templates')
 
 async function renderMeme(res, imgBuf, top, bottom, fontsize, format, font, layout, overlayBufs, cfg) {
-  const useFormat = (format || 'jpg').toLowerCase() === 'png' ? 'png' : 'jpg'
-  const mime = useFormat === 'png' ? 'image/png' : 'image/jpeg'
-  const ext = useFormat === 'png' ? 'png' : 'jpg'
+  const fmt = (format || 'jpg').toLowerCase()
+  const useFormat = fmt === 'png' ? 'png' : fmt === 'webp' ? 'webp' : 'jpg'
+  const mime = useFormat === 'png' ? 'image/png' : useFormat === 'webp' ? 'image/webp' : 'image/jpeg'
+  const ext = useFormat
   const family = resolveFontFamily(font)
 
   const img = await loadImage(imgBuf)
@@ -590,7 +591,9 @@ async function renderMeme(res, imgBuf, top, bottom, fontsize, format, font, layo
 
   const out = useFormat === 'png'
     ? canvas.toBuffer('image/png')
-    : canvas.toBuffer('image/jpeg', { quality: 0.92 })
+    : useFormat === 'webp'
+      ? canvas.toBuffer('image/webp', { quality: 0.92 })
+      : canvas.toBuffer('image/jpeg', { quality: 0.92 })
 
   res.set('Content-Type', mime)
   res.set('Content-Disposition', `inline; filename="meme.${ext}"`)
@@ -887,30 +890,41 @@ module.exports = async function memeHandler(req, res) {
 
     // Auto-detect static vs animated from buffer content
     const isAnimated = isAnimatedBuffer(imgBuf)
+    const requested = (format || '').toLowerCase()
+    const srcType = detectMediaType(imgBuf)
 
     if (isAnimated) {
-      // Output format follows the SOURCE type by default (webp->webp, gif->gif,
-      // mp4->mp4); explicit gif/webp/mp4 query overrides. Never render an
-      // animated source as a static jpg/png.
-      const requested = (format || '').toLowerCase()
-      const srcType = detectMediaType(imgBuf)
-      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : (['gif', 'webp', 'mp4'].includes(srcType) ? srcType : 'mp4')
-      const texts = [top || '', bottom || '']
-      try {
-        const r = await renderAnimated({ bgBuf: imgBuf, texts, cfg: null, font, format: outFmt, overlayBufs })
-        cacheWrite(key, r.buffer, r.mime)
-        res.set('Content-Type', r.mime)
-        res.set('Content-Disposition', `inline; filename="meme.${r.ext}"`)
-        res.set('X-Cache', 'MISS')
-        return res.end(r.buffer)
-      } catch (animErr) {
-        console.error('Animated render failed, falling back to static:', animErr.message)
+      // Mode logic:
+      //  - format auto / empty -> follow source type (webp->webp, gif->gif, mp4->mp4)
+      //  - format jpg/png (static) -> render STATIC directly from first frame,
+      //    do NOT split/decode the whole animation first
+      //  - format gif/webp/mp4 -> render animated in that format
+      const wantStatic = requested === 'jpg' || requested === 'png'
+      if (!wantStatic) {
+        const outFmt = ['gif', 'webp', 'mp4'].includes(requested)
+          ? requested
+          : (['gif', 'webp', 'mp4'].includes(srcType) ? srcType : 'mp4')
+        const texts = [top || '', bottom || '']
+        try {
+          const r = await renderAnimated({ bgBuf: imgBuf, texts, cfg: null, font, format: outFmt, overlayBufs })
+          cacheWrite(key, r.buffer, r.mime)
+          res.set('Content-Type', r.mime)
+          res.set('Content-Disposition', `inline; filename="meme.${r.ext}"`)
+          res.set('X-Cache', 'MISS')
+          return res.end(r.buffer)
+        } catch (animErr) {
+          console.error('Animated render failed, falling back to static:', animErr.message)
+        }
       }
+      // static request (jpg/png) falls through to renderMeme which loads only
+      // the first frame — no full frame extraction needed
     }
 
     const out = await renderMeme(res, imgBuf, top, bottom, fontsize, format, font, layout, overlayBufs, null)
     // note: renderMeme already ends response; cache handled below
-    cacheWrite(key, out, out ? (format === 'png' ? 'image/png' : 'image/jpeg') : '')
+    const fmts = (format || 'jpg').toLowerCase()
+    const cmime = fmts === 'png' ? 'image/png' : fmts === 'webp' ? 'image/webp' : 'image/jpeg'
+    cacheWrite(key, out, out ? cmime : '')
   } catch (err) {
     console.error('Meme error:', err)
     if (!res.headersSent) {
@@ -957,10 +971,16 @@ module.exports.templateHandler = async function templateHandler(req, res) {
     const q = req.query[`t${i}`]
     if (q) texts[i - 1] = q
   }
-  // animated: template default.gif OR ?background= animated URL
+  // animated: template default.gif OR ?background= animated URL.
+  // Animated rendering only happens when:
+  //  - user explicitly asked gif/webp/mp4, OR
+  //  - template ships a .gif AND format is auto/empty (not jpg/png)
+  // If user asked jpg/png, render static even if the template is animated —
+  // loadImage just takes the first frame, no frame extraction needed.
   const isAnimatedTpl = tfile.endsWith('.gif')
+  const wantAnimFmt = requestedFmt === 'gif' || requestedFmt === 'webp' || requestedFmt === 'mp4'
   const bgUrl = req.query.background
-  if (isAnimatedTpl || bgUrl) {
+  if ((wantAnimFmt || (isAnimatedTpl && !wantStatic)) || (bgUrl && !wantStatic)) {
     try {
       ensureFont()
       let bgBuf
@@ -1045,9 +1065,14 @@ module.exports.templateHandler = async function templateHandler(req, res) {
       drawCaption(ctx, texts[1] || '', w, h, fs, 'bottom', family)
     }
 
-    const useFormat = (format || 'jpg').toLowerCase() === 'png' ? 'png' : 'jpg'
-    const mime = useFormat === 'png' ? 'image/png' : 'image/jpeg'
-    const out = useFormat === 'png' ? canvas.toBuffer('image/png') : canvas.toBuffer('image/jpeg', { quality: 0.92 })
+    const tfmt = (format || 'jpg').toLowerCase()
+    const useFormat = tfmt === 'png' ? 'png' : tfmt === 'webp' ? 'webp' : 'jpg'
+    const mime = useFormat === 'png' ? 'image/png' : useFormat === 'webp' ? 'image/webp' : 'image/jpeg'
+    const out = useFormat === 'png'
+      ? canvas.toBuffer('image/png')
+      : useFormat === 'webp'
+        ? canvas.toBuffer('image/webp', { quality: 0.92 })
+        : canvas.toBuffer('image/jpeg', { quality: 0.92 })
     cacheWrite(tcacheKey, out, mime)
     res.set('Content-Type', mime)
     res.set('Content-Disposition', `inline; filename="meme_${id}.${useFormat}"`)
