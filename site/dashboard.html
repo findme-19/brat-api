@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brat API Console</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#141821; --panel2:#1b2030; --border:#262d3d;
+    --txt:#e6e9f0; --muted:#8b93a7; --accent:#ff2d6d; --accent2:#7a5cff;
+    --ok:#3ddc84; --err:#ff5c5c;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);}
+  header{background:linear-gradient(100deg,#ff2d6d,#7a5cff);padding:16px 28px;display:flex;align-items:center;gap:14px;}
+  header .logo{width:38px;height:38px;border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:center;color:#ff2d6d;font-size:20px;}
+  header h1{margin:0;font-size:19px;font-weight:700;color:#fff;}
+  header p{margin:2px 0 0;font-size:12.5px;color:rgba(255,255,255,.82);}
+  .wrap{max-width:1120px;margin:0 auto;padding:22px;}
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+  .tab{padding:9px 15px;background:var(--panel);border:1px solid var(--border);border-radius:9px;cursor:pointer;font-size:13.5px;display:flex;align-items:center;gap:8px;transition:.15s;color:var(--muted);}
+  .tab i{font-size:14px;}
+  .tab:hover{border-color:var(--accent);color:var(--txt);}
+  .tab.active{background:linear-gradient(100deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;}
+  .panel{display:none;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;}
+  .panel.active{display:block;}
+  .panel h2{margin:0 0 4px;font-size:17px;}
+  .panel .desc{color:var(--muted);font-size:13px;margin:0 0 18px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .field{margin-bottom:13px;}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  input,select{width:100%;padding:10px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--txt);font-size:14px;font-family:inherit;}
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+  .btn{background:linear-gradient(100deg,var(--accent),var(--accent2));color:#fff;border:none;padding:11px 22px;border-radius:9px;font-size:14.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn:hover{opacity:.92;}
+  .btn:disabled{opacity:.6;cursor:wait;}
+  .urlbox{font-family:'SFMono-Regular',Consolas,monospace;font-size:11.5px;background:var(--panel2);padding:9px 11px;border-radius:7px;word-break:break-all;margin-top:12px;color:var(--muted);border:1px solid var(--border);}
+  .preview{margin-top:16px;background:var(--panel2);border:1px dashed var(--border);border-radius:10px;padding:16px;min-height:130px;display:flex;align-items:center;justify-content:center;text-align:center;}
+  .preview img,.preview video{max-width:100%;max-height:460px;border-radius:8px;}
+  .example{margin-top:16px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:14px;}
+  .example h4{margin:0 0 10px;font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px;text-transform:uppercase;letter-spacing:.5px;}
+  .example .med{max-width:220px;max-height:200px;border-radius:7px;margin:4px;}
+  .card-list{max-height:340px;overflow-y:auto;padding-right:6px;}
+  .card-list::-webkit-scrollbar{width:8px;}
+  .card-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+  .tpl-card{display:flex;align-items:center;gap:11px;padding:10px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:9px;margin-bottom:8px;cursor:pointer;transition:.12s;}
+  .tpl-card:hover{border-color:var(--accent);transform:translateX(2px);}
+  .tpl-card .ic{width:56px;height:56px;border-radius:8px;overflow:hidden;background:linear-gradient(100deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0;object-fit:cover;}
+  .tpl-card .ic img.tpl-thumb{width:100%;height:100%;object-fit:cover;display:block;}
+  .tpl-card .nm{font-size:13.5px;font-weight:600;}
+  .tpl-card .mt{font-size:11.5px;color:var(--muted);}
+  .tpl-ctrl{display:flex;gap:8px;margin:10px 0 12px;}
+  .tpl-ctrl input{flex:1;min-width:0;}
+  /* searchable template picker combobox */
+  .pick-wrap{position:relative;}
+  .pick-input{width:100%;box-sizing:border-box;}
+  .pick-list{position:absolute;z-index:50;top:100%;left:0;right:0;max-height:280px;overflow-y:auto;background:var(--panel2);border:1px solid var(--border);border-radius:8px;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  .pick-item{padding:8px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .pick-item:last-child{border-bottom:none;}
+  .pick-item:hover{background:var(--accent);color:#fff;}
+  .fonts-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  .font-pill{display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;font-size:12.5px;}
+  .font-pill i{color:var(--accent);}
+  .font-pill .fn{font-family:monospace;color:var(--muted);font-size:11px;}
+  .font-pill .fi{display:flex;flex-direction:column;gap:2px;flex:1;}
+  .font-pill .fp{font-size:19px;line-height:1.1;margin-top:2px;color:var(--text);}
+  .status{color:var(--muted);font-size:12.5px;}
+  .err{color:var(--err);}
+  .two-col{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;}
+  @media(max-width:760px){.grid,.two-col{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+  <div>
+    <h1>Brat API Console</h1>
+    <p>Live playground for all endpoints &middot; public access &middot; <span id="base"></span></p>
+  </div>
+</header>
+<div class="wrap">
+  <div class="tabs" id="tabs"></div>
+  <div id="panels"></div>
+</div>
+
+<script>
+const BASE = location.origin;
+document.getElementById('base').textContent = BASE;
+
+const ENDPOINTS = [
+  { id:'generate', name:'Generate', icon:'fa-image',
+    desc:'Generate static brat image from text.',
+    params:[
+      {k:'text', t:'text', d:'brat api dashboard'},
+      {k:'theme', t:'select', opts:['white','green','black','red','strike','blue'], d:'white'},
+      {k:'background', t:'text', d:'', ph:'bg color, e.g. #ff00ff'},
+      {k:'color', t:'text', d:'', ph:'text color'},
+      {k:'width', t:'number', d:'924'},
+      {k:'height', t:'number', d:'1418'},
+    ],
+    example:'/examples/generate_white.png' },
+  { id:'bratvid', name:'BratVid', icon:'fa-film',
+    desc:'Video from text with per-word typing effect.',
+    params:[
+      {k:'text', t:'text', d:'hello world this is typing'},
+      {k:'theme', t:'select', opts:['white','green','black','red','strike','blue'], d:'white'},
+      {k:'format', t:'select', opts:['mp4','gif'], d:'mp4'},
+      {k:'fps', t:'number', d:'25'},
+      {k:'duration', t:'number', d:'1'},
+      {k:'loop', t:'number', d:'0'},
+    ],
+    example:'/examples/bratvid.mp4' },
+  { id:'bratvid-realtime', name:'Realtime', icon:'fa-keyboard',
+    desc:'Human-like typing simulation (random delays).',
+    params:[
+      {k:'text', t:'text', d:'human like typing simulation'},
+      {k:'theme', t:'select', opts:['white','green','black','red','strike','blue'], d:'white'},
+      {k:'format', t:'select', opts:['mp4','gif'], d:'mp4'},
+      {k:'charDelayMin', t:'number', d:'40'},
+      {k:'charDelayMax', t:'number', d:'60'},
+      {k:'spaceDelay', t:'number', d:'200'},
+    ],
+    example:'/examples/bratvid-realtime.mp4' },
+  { id:'canvas', name:'Canvas', icon:'fa-clone',
+    desc:'Canvas typing effect with emoji support.',
+    params:[
+      {k:'text', t:'text', d:'canvas typing effect'},
+      {k:'theme', t:'select', opts:['white','black','green'], d:'white'},
+      {k:'format', t:'select', opts:['mp4','gif'], d:'mp4'},
+      {k:'blur', t:'number', d:'0'},
+      {k:'frameDuration', t:'number', d:'0.35'},
+      {k:'font', t:'select', opts:['arialnarrow','times','compacta','druk'], d:'arialnarrow'},
+    ],
+    example:'/examples/canvas.mp4' },
+  { id:'meme', name:'Meme Custom', icon:'fa-image-polaroid',
+    desc:'Overlay text on your own image/video (URL). Auto-detects static vs animated (gif/webp/mp4/jpg/png).',
+    params:[
+      {k:'image', t:'text', d:'https://api.memegen.link/images/afraid.jpg', ph:'image or video URL (gif/webp/mp4/jpg/png)'},
+      {k:'top', t:'text', d:'CUSTOM MEME'},
+      {k:'bottom', t:'text', d:'with our api'},
+      {k:'font', t:'fontpick', d:'default'},
+      {k:'fontsize', t:'number', d:''},
+      {k:'style', t:'text', d:'', ph:'overlay image URL'},
+      {k:'layout', t:'select', opts:['default','top'], d:'default'},
+      {k:'format', t:'select', opts:['jpg','png','gif','webp','mp4'], d:'jpg'},
+    ],
+    example:'/examples/meme_custom.jpg' },
+  { id:'meme-template', name:'Meme Template', icon:'fa-layer-group',
+    desc:'memegen templates with auto positioning.',
+    params:[
+      {k:'templatePicker', t:'templatepick', d:''},
+      {k:'__dyn', t:'dyntext', d:''},
+      {k:'font', t:'fontpick', d:'default'},
+      {k:'format', t:'select', opts:['jpg','png','gif','webp','mp4'], d:'jpg'},
+    ],
+    example:'/examples/meme_drake.jpg', templateMode:true },
+  { id:'meme-fonts', name:'Fonts', icon:'fa-font', desc:'Available fonts for meme endpoints.', params:[], listFonts:true },
+  { id:'meme-templates', name:'Templates', icon:'fa-table-cells', desc:'All 208 templates (click to load).', params:[], listTemplates:true },
+];
+
+const tabsEl=document.getElementById('tabs');
+const panelsEl=document.getElementById('panels');
+
+ENDPOINTS.forEach((e,i)=>{
+  const tab=document.createElement('div');
+  tab.className='tab'+(i===0?' active':'');
+  tab.innerHTML=`<i class="fa-solid ${e.icon}"></i>${e.name}`;
+  tab.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-'+e.id).classList.add('active');
+  };
+  tabsEl.appendChild(tab);
+
+  const panel=document.createElement('div');
+  panel.className='panel'+(i===0?' active':'');
+  panel.id='panel-'+e.id;
+
+  let html=`<h2>${e.name}</h2><p class="desc">${e.desc}</p>`;
+
+  if(e.params.length){
+    html+='<div class="two-col"><div>';
+    e.params.forEach(p=>{
+      html+=`<div class="field"><label>${p.k}</label>`;
+      if(p.t==='select'){
+        html+=`<select data-k="${p.k}">`+p.opts.map(o=>`<option ${o===p.d?'selected':''}>${o}</option>`).join('')+`</select>`;
+      } else if(p.t==='number'){
+        html+=`<input type="number" data-k="${p.k}" value="${p.d||''}" placeholder="${p.ph||''}">`;
+      } else if(p.t==='fontpick'){
+        html+=`<select class="font-select" data-k="${p.k}"><option value="default">default (Arial Narrow)</option></select>`;
+      } else if(p.t==='templatepick'){
+        html+=`<div class="pick-wrap">
+          <input type="text" class="pick-input" data-k="id" placeholder="Search template…" autocomplete="off" oninput="pickFilter(this)">
+          <div class="pick-list" id="pick-list-${e.id}" style="display:none"></div>
+        </div>`;
+      } else if(p.t==='dyntext'){
+        html+=`<div id="dyn-text-${e.id}"></div>`;
+      } else {
+        html+=`<input type="text" data-k="${p.k}" value="${p.d||''}" placeholder="${p.ph||''}">`;
+      }
+      html+='</div>';
+    });
+    html+=`<button class="btn" onclick="run('${e.id}')"><i class="fa-solid fa-play"></i> Generate</button>`;
+    html+=`<div class="urlbox" id="url-${e.id}"></div>`;
+    html+='</div>';
+    html+=`<div><div class="preview" id="prev-${e.id}"><span class="status">Result appears here…</span></div></div>`;
+    html+='</div>';
+  }
+
+  if(e.listFonts){
+    html+=`<div class="example"><h4><i class="fa-solid fa-font"></i> Available Fonts</h4><div class="fonts-grid" id="fonts-list"><span class="status">loading…</span></div></div>`;
+  } else if(e.listTemplates){
+    html+=`<div class="example"><h4><i class="fa-solid fa-table-cells"></i> Templates</h4>
+      <div class="tpl-ctrl">
+        <input type="text" id="tpl-search" class="dyn-input" placeholder="Search templates…" oninput="renderTplList()">
+      </div>
+      <div class="card-list" id="tmpl-list"><span class="status">loading…</span></div></div>`;
+  } else if(e.example){
+    const isVid=e.example.endsWith('.mp4')||e.example.endsWith('.gif');
+    html+=`<div class="example"><h4><i class="fa-solid fa-eye"></i> Example</h4>`;
+    if(isVid) html+=`<video class="med" src="${e.example}" autoplay loop muted playsinline></video>`;
+    else html+=`<img class="med" src="${e.example}" alt="example">`;
+    html+=`<div class="urlbox">${BASE}${e.example}</div></div>`;
+  }
+
+  panel.innerHTML=html;
+  panelsEl.appendChild(panel);
+});
+
+function buildUrl(ep){
+  const e=ENDPOINTS.find(x=>x.id===ep);
+  const params={};
+  document.querySelectorAll(`#panel-${ep} [data-k]`).forEach(inp=>{
+    const v=inp.value.trim();
+    if(v!=='') params[inp.dataset.k]=v;
+  });
+  let path;
+  if(ep==='meme-template'){
+    const segs=[];
+    const id=params.id||'';
+    for(let i=1;i<=8;i++){ if(params['t'+i]) segs.push(params['t'+i]); }
+    if(segs.length===0 && id) segs.push('');
+    path='/meme/'+[id,...segs].map(encodeURIComponent).join('/');
+    delete params.id;
+    for(let i=1;i<=8;i++) delete params['t'+i];
+    // collect dynamic overlay style inputs, join with comma
+    const styles = [];
+    document.querySelectorAll('#panel-meme-template .dyn-style-input').forEach(inp => {
+      styles.push(inp.value.trim());
+    });
+    // drop trailing empty strings
+    while (styles.length && styles[styles.length - 1] === '') styles.pop();
+    if (styles.length) params['style'] = styles.join(',');
+  } else {
+    path='/'+ep;
+  }
+  const qs=Object.keys(params).map(k=>`${k}=${encodeURIComponent(params[k])}`).join('&');
+  return path+(qs?'?'+qs:'');
+}
+
+function run(ep){
+  const url=buildUrl(ep);
+  document.getElementById('url-'+ep).textContent=BASE+url;
+  const prev=document.getElementById('prev-'+ep);
+  prev.innerHTML='<span class="status"><i class="fa-solid fa-spinner fa-spin"></i> generating…</span>';
+  const btn=document.querySelector('#panel-'+ep+' .btn');
+  if(btn){ btn.disabled=true; btn.dataset.label=btn.innerHTML; btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Loading…'; }
+  const reset=()=>{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset.label||'<i class="fa-solid fa-play"></i> Generate'; } };
+  fetch(url).then(r=>{
+    if(!r.ok) return r.json().then(j=>({err:j.error||r.statusText}));
+    const ct=r.headers.get('content-type')||'';
+    return r.blob().then(b=>({blob:b,ct}));
+  }).then(res=>{
+    if(res.err){prev.innerHTML=`<span class="err"><i class="fa-solid fa-circle-exclamation"></i> ${res.err}</span>`;reset();return;}
+    const obj=URL.createObjectURL(res.blob);
+    // gif is an image, not video -> must use <img> (video tag can't play gif)
+    if(res.ct.includes('video')) prev.innerHTML=`<video src="${obj}" autoplay loop muted playsinline controls></video>`;
+    else if(res.ct.includes('image')||res.ct.includes('gif')) prev.innerHTML=`<img src="${obj}" alt="result">`;
+    else prev.innerHTML=`<span class="status">Non-media (${res.ct})</span>`;
+    reset();
+  }).catch(err=>{ prev.innerHTML=`<span class="err">${err.message}</span>`; reset(); });
+}
+
+// ---- localStorage cache for templates & fonts ----
+const LS_TMPL='brat_templates_v1';
+const LS_FONT='brat_fonts_v1';
+let TPL_CACHE=null; // global template list (used by loadTpl)
+
+function saveLS(key,data){ try{localStorage.setItem(key,JSON.stringify(data));}catch(e){} }
+function readLS(key){ try{return JSON.parse(localStorage.getItem(key));}catch(e){return null;} }
+
+function populateFonts(d){
+  document.querySelectorAll('.font-select').forEach(sel=>{
+    (d.fonts||[]).forEach(f=>{
+      const o=document.createElement('option');o.value=f.id;o.textContent=f.id+(f.note?' — '+f.note:'');sel.appendChild(o);
+    });
+  });
+  const fl=document.getElementById('fonts-list');
+  if(fl){
+    fl.innerHTML='';
+    (d.fonts||[]).forEach(function(f){
+      const fam='ff_'+f.id.replace(/[^a-z0-9]/gi,'');
+      // inject @font-face so browser can render the actual font shape
+      const ff=document.createElement('style');
+      ff.textContent='@font-face{font-family:"'+fam+'";src:url("/site/fonts/'+f.file+'") format("'+((f.file.endsWith('.woff')||f.file.endsWith('.woff2'))?'woff':'truetype')+'");}';
+      document.head.appendChild(ff);
+      const pill=document.createElement('div');
+      pill.className='font-pill';
+      pill.innerHTML='<i class="fa-solid fa-font"></i><div class="fi">'+f.id+'<div class="fn">'+f.file+'</div>'+
+        '<div class="fp" style="font-family:\''+fam+'\'">Aa Bb Cc Dd 123</div></div>';
+      fl.appendChild(pill);
+    });
+  }
+}
+function populateTemplates(d){
+  TPL_CACHE=d.templates||[];
+  // sort A-Z once for stable ordering everywhere
+  TPL_CACHE.sort((a,b)=>String(a.name||a.id).localeCompare(String(b.name||b.id)));
+  initPickList();
+  const tl=document.getElementById('tmpl-list');
+  if(tl){ renderTplList(); }
+}
+
+function renderTplList(){
+  const tl=document.getElementById('tmpl-list');
+  if(!tl) return;
+  const q=((document.getElementById('tpl-search')||{}).value||'').toLowerCase().trim();
+  let list=TPL_CACHE||[]; // already A-Z
+  if(q){
+    list=list.filter(t=>(t.name||'').toLowerCase().includes(q)||(t.id||'').toLowerCase().includes(q)||((t.keywords||[]).join(' ').toLowerCase().includes(q)));
+  }
+  tl.innerHTML='';
+  if(!list.length){ tl.innerHTML='<span class="status">No templates found.</span>'; return; }
+  list.forEach(function(t){
+    const card=document.createElement('div');
+    card.className='tpl-card';
+    card.onclick=function(){ loadTpl(t.id); };
+    const thumb=document.createElement('div'); thumb.className='ic';
+    // preview thumbnail = the template's example URL
+    if(t.url){
+      const img=document.createElement('img');
+      img.className='tpl-thumb';
+      img.loading='lazy';
+      img.src=BASE+t.url+'?format=jpg';
+      img.alt=t.name;
+      img.onerror=function(){ this.style.display='none'; };
+      thumb.appendChild(img);
+    } else {
+      thumb.innerHTML='<i class="fa-solid fa-photo-film"></i>';
+    }
+    const body=document.createElement('div');
+    const nm=document.createElement('div'); nm.className='nm'; nm.textContent=t.name;
+    const mt=document.createElement('div'); mt.className='mt';
+    mt.textContent=(t.lines||2)+' line(s)'+(t.overlay?', '+t.overlay+' overlay(s)':'')+(t.animated?' • animated':'');
+    body.appendChild(nm); body.appendChild(mt);
+    card.appendChild(thumb); card.appendChild(body);
+    tl.appendChild(card);
+  });
+}
+
+// ---- searchable template picker (combobox) ----
+function initPickList(){
+  const list=document.getElementById('pick-list-meme-template');
+  if(!list) return;
+  list.innerHTML='';
+  const inp=document.querySelector('.pick-input[data-k="id"]');
+  (TPL_CACHE||[]).forEach(function(t){
+    const o=document.createElement('div');
+    o.className='pick-item';
+    o.textContent=t.name;
+    o.title=t.id;
+    if(t.overlay) o.textContent+=' ('+t.overlay+' overlay)';
+    o.onclick=function(){ pickSelect(inp, t); };
+    list.appendChild(o);
+  });
+  // recreate list on open
+  if(inp) inp.addEventListener('focus', function(){ pickFilter(inp); });
+}
+function pickFilter(inp){
+  if(!inp) return;
+  const list=document.getElementById('pick-list-meme-template');
+  if(!list) return;
+  const q=inp.value.toLowerCase().trim();
+  const items=list.children;
+  for(let i=0;i<items.length;i++){
+    const it=items[i];
+    const matches=!q || it.textContent.toLowerCase().includes(q);
+    it.style.display=matches?'':'none';
+  }
+  list.style.display='block';
+}
+function pickSelect(inp, t){
+  inp.value=t.name;
+  const list=document.getElementById('pick-list-meme-template');
+  if(list) list.style.display='none';
+  loadTpl(t.id);
+  // blur input to close
+  inp.blur();
+}
+// close pick list on outside click
+document.addEventListener('click', function(ev){
+  const wrap=document.querySelector('.pick-wrap');
+  if(wrap && !wrap.contains(ev.target)){
+    const list=document.getElementById('pick-list-meme-template');
+    if(list) list.style.display='none';
+  }
+});
+
+// 1) load from localStorage instantly
+const cachedFonts=readLS(LS_FONT);
+if(cachedFonts) populateFonts(cachedFonts);
+const cachedTmpl=readLS(LS_TMPL);
+if(cachedTmpl){ populateTemplates(cachedTmpl); }
+
+// 2) background refresh: update only if server has new data (count changed)
+fetch('/meme/fonts').then(r=>r.json()).then(d=>{
+  const old=readLS(LS_FONT);
+  if(!old || (old.fonts&&d.fonts&&old.fonts.length!==d.fonts.length) || JSON.stringify(old)!==JSON.stringify(d)){
+    saveLS(LS_FONT,d); if(!cachedFonts) populateFonts(d);
+  }
+}).catch(()=>{});
+
+fetch('/meme/templates').then(r=>r.json()).then(d=>{
+  const old=readLS(LS_TMPL);
+  if(!old || (old.templates&&d.templates&&old.templates.length!==d.templates.length) || JSON.stringify(old)!==JSON.stringify(d)){
+    saveLS(LS_TMPL,d); if(!cachedTmpl) populateTemplates(d); else { TPL_CACHE=d.templates||[]; }
+  }
+}).catch(()=>{});
+
+function loadTpl(id){
+  const sel=document.querySelector('#panel-meme-template [data-k="id"]');
+  if(!sel){ return; }
+  sel.value=id;
+  const tab=[...document.querySelectorAll('.tab')].find(t=>t.textContent.includes('Template'));
+  if(tab){ tab.click(); }
+  const t=(TPL_CACHE||[]).find(x=>x.id===id);
+  if(!t){ return; }
+  const n=(t.lines && t.lines>=1) ? t.lines : (Array.isArray(t.example) ? t.example.length : 2);
+  const cont=document.getElementById('dyn-text-meme-template');
+  if(cont){
+    cont.innerHTML='';
+    for(let i=1;i<=n;i++){
+      const fld=document.createElement('div');
+      fld.className='field';
+      const lab=document.createElement('label');
+      lab.textContent='Text '+i;
+      const inp=document.createElement('input');
+      inp.type='text';
+      inp.dataset.k='t'+i;
+      inp.className='dyn-input';
+      inp.value=(t.example && t.example[i-1]) ? t.example[i-1] : '';
+      fld.appendChild(lab);
+      fld.appendChild(inp);
+      cont.appendChild(fld);
+    }
+    // generate overlay style inputs if template has overlay slots
+    const numOverlays = t.overlay || 0;
+    for (let i = 1; i <= numOverlays; i++) {
+      const fld = document.createElement('div');
+      fld.className = 'field';
+      const lab = document.createElement('label');
+      lab.textContent = 'Overlay ' + i;
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'dyn-style-input';
+      inp.placeholder = 'https://...';
+      inp.value = '';
+      fld.appendChild(lab);
+      fld.appendChild(inp);
+      cont.appendChild(fld);
+    }
+    // adjust format dropdown based on whether template supports animation
+    const animated = t.animated !== false;
+    const fmtSel = document.querySelector('#panel-meme-template [data-k="format"]');
+    if (fmtSel) {
+      if (animated) {
+        fmtSel.innerHTML = '<option value="jpg">jpg</option><option value="png">png</option><option value="gif">gif</option><option value="webp">webp</option><option value="mp4">mp4</option>';
+        fmtSel.value = 'jpg';
+      } else {
+        fmtSel.innerHTML = '<option value="jpg">jpg</option><option value="png">png</option>';
+        fmtSel.value = 'jpg';
+      }
+    }
+  }
+  if(t.url){
+    const prev=document.querySelector('#panel-meme-template .example .urlbox');
+    if(prev){ prev.textContent=BASE+t.url; }
+    const med=document.querySelector('#panel-meme-template .example');
+    if(med){
+      const old=med.querySelector('img,video');
+      if(old){ old.remove(); }
+      const img=new Image();
+      img.className='med';
+      img.alt='example '+id;
+      img.src=BASE+t.url;
+      med.appendChild(img);
+    }
+  }
+  const p=document.getElementById('panel-meme-template');
+  if(p){ p.scrollIntoView({behavior:'smooth'}); }
+}
+</script>
+</body>
+</html>

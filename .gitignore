@@ -1,0 +1,33 @@
+node_modules/
+.cache/
+*.log
+.env
+.DS_Store
+# scrape junk (never commit)
+site/www.bratgenerator.com/
+site/use.typekit.net/
+site/hts-cache/
+site/hts-log.txt
+site/libraries.wmgartistservices.com/
+site/p.typekit.net/
+site/cdn.cookielaw.org/
+site/assets.adobedtm.com/
+site/www.googleadservices.com/
+site/www.wminewmedia.com/
+site/css/
+site/js/
+site/images/
+site/a
+site/a_*
+site/d
+site/d_*
+site/l
+site/l_*
+site/backblue.gif
+site/fade.gif
+site/index.html
+# large unused font
+site/fonts/AppleColorEmoji.ttf
+# runtime
+cache/
+tmp/
