@@ -143,9 +143,8 @@ const ENDPOINTS = [
       {k:'fontsize', t:'number', d:''},
       {k:'style', t:'text', d:'', ph:'overlay image URL'},
       {k:'layout', t:'select', opts:['default','top'], d:'default'},
-      {k:'format', t:'select', opts:['jpg','png','gif','webp','mp4'], d:'jpg'},
     ],
-    example:'/examples/meme_custom.jpg' },
+    example:'/examples/meme_custom.jpg', autoFormat:true },
   { id:'meme-template', name:'Meme Template', icon:'fa-layer-group',
     desc:'memegen templates with auto positioning.',
     params:[
@@ -202,6 +201,9 @@ ENDPOINTS.forEach((e,i)=>{
       }
       html+='</div>';
     });
+    if(e.autoFormat){
+      html+='<div class="field"><label>format</label><div class="stat"><i class="fa-solid fa-wand-magic-sparkles"></i> auto (ikut jenis input: gif/webp/mp4 → animated, jpg/png → static)</div></div>';
+    }
     html+=`<button class="btn" onclick="run('${e.id}')"><i class="fa-solid fa-play"></i> Generate</button>`;
     html+=`<div class="urlbox" id="url-${e.id}"></div>`;
     html+='</div>';

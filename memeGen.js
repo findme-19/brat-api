@@ -655,8 +655,10 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     let srcFps = 12
     let frames = []
     if (isAnimatedWebp(bgBuf)) {
-      // ffmpeg's webp decoder can't handle animated webp — use node-webpmux
-      const decoded = await extractWebpFrames(bgBuf)
+      // ffmpeg's webp decoder can't handle animated webp — use node-webpmux.
+      // Cap frames lower for gif/webp (palette encodes blow up fast) vs mp4.
+      const frameCap = (useFormat === 'mp4') ? 120 : 60
+      const decoded = await extractWebpFrames(bgBuf, frameCap)
       // base fps from average frame delay (webp delay is in ms)
       const delays = decoded.map(f => f.delay).filter(d => d > 0)
       if (delays.length) {
@@ -712,12 +714,14 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     // 2) render text onto each frame
     const rendered = []
     const total = frames.length
+    let srcW = 0, srcH = 0
     for (let fi = 0; fi < frames.length; fi++) {
       const f = frames[fi]
       const percent = total > 1 ? (fi + 1) / total : 1.0
       const fb = fsMod.readFileSync(pathMod.join(framesDir, f))
       const img = await loadImage(fb)
       const w = img.width, h = img.height
+      if (!srcW) { srcW = w; srcH = h }
       const canvas = createCanvas(w, h)
       const ctx = canvas.getContext('2d')
       ctx.drawImage(img, 0, 0, w, h)
@@ -788,11 +792,16 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     const outPath = pathMod.join(tmpDir, 'out.' + (useFormat === 'webp' ? 'webp' : useFormat === 'mp4' ? 'mp4' : 'gif'))
     const inPattern = pathMod.join(framesDir, 'f%04d.png')
     if (useFormat === 'gif') {
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', 'scale=1000:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse', '-loop', '0', outPath], { stdio: 'ignore' })
+      // scale to source width (cap 640) — forcing 1000px on small sources blew
+      // up file size past the 20MB cap for long animations
+      const gifW = srcW ? Math.min(srcW, 640) : 640
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${gifW}:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`, '-loop', '0', outPath], { stdio: 'ignore' })
     } else if (useFormat === 'webp') {
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-loop', '0', outPath], { stdio: 'ignore' })
+      const webpW = srcW ? Math.min(srcW, 640) : 640
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${webpW}:-2:flags=lanczos`, '-loop', '0', outPath], { stdio: 'ignore' })
     } else { // mp4
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', outPath], { stdio: 'ignore' })
+      const mp4W = srcW ? Math.min(srcW, 640) : 640
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${mp4W}:-2`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', outPath], { stdio: 'ignore' })
     }
     const outBuf = fsMod.readFileSync(outPath)
     if (outBuf.length > maxBytes) throw new Error('output exceeds ' + (maxBytes / 1024 / 1024) + 'MB limit')
@@ -856,8 +865,10 @@ module.exports = async function memeHandler(req, res) {
     const isAnimated = isAnimatedBuffer(imgBuf)
 
     if (isAnimated) {
-      const animFmt = (format || 'gif').toLowerCase()
-      const outFmt = ['gif', 'webp', 'mp4'].includes(animFmt) ? animFmt : 'gif'
+      // Output format MUST be animated for animated input — auto-follow the
+      // input (never render an animated source as a static jpg/png).
+      const requested = (format || '').toLowerCase()
+      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : 'gif'
       const texts = [top || '', bottom || '']
       try {
         const r = await renderAnimated({ bgBuf: imgBuf, texts, cfg: null, font, format: outFmt, overlayBufs })
