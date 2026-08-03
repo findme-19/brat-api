@@ -471,17 +471,18 @@ function loadTpl(id){
       fld.appendChild(inp);
       cont.appendChild(fld);
     }
-    // adjust format dropdown based on whether template supports animation
+    // adjust format dropdown based on whether template supports animation.
+    // 'auto' is ALWAYS the default (auto-detect: animated -> ikut source,
+    // static -> jpg/png/webp). Animated templates also offer gif/webp/mp4.
     const animated = t.animated !== false;
     const fmtSel = document.querySelector('#panel-meme-template [data-k="format"]');
     if (fmtSel) {
       if (animated) {
-        fmtSel.innerHTML = '<option value="jpg">jpg</option><option value="png">png</option><option value="gif">gif</option><option value="webp">webp</option><option value="mp4">mp4</option>';
-        fmtSel.value = 'jpg';
+        fmtSel.innerHTML = '<option value="auto">auto</option><option value="jpg">jpg</option><option value="png">png</option><option value="gif">gif</option><option value="webp">webp</option><option value="mp4">mp4</option>';
       } else {
-        fmtSel.innerHTML = '<option value="jpg">jpg</option><option value="png">png</option>';
-        fmtSel.value = 'jpg';
+        fmtSel.innerHTML = '<option value="auto">auto</option><option value="jpg">jpg</option><option value="png">png</option>';
       }
+      fmtSel.value = 'auto';
     }
   }
   if(t.url){
