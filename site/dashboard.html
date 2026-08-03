@@ -146,14 +146,14 @@ const ENDPOINTS = [
     ],
     example:'/examples/meme_custom.jpg', autoFormat:true },
   { id:'meme-template', name:'Meme Template', icon:'fa-layer-group',
-    desc:'memegen templates with auto positioning.',
+    desc:'memegen templates with auto positioning. Animated templates render animated automatically (format mengikuti template).',
     params:[
       {k:'templatePicker', t:'templatepick', d:''},
       {k:'__dyn', t:'dyntext', d:''},
       {k:'font', t:'fontpick', d:'default'},
-      {k:'format', t:'select', opts:['jpg','png','gif','webp','mp4'], d:'jpg'},
+      {k:'format', t:'select', opts:['auto','jpg','png','gif','webp','mp4'], d:'auto'},
     ],
-    example:'/examples/meme_drake.jpg', templateMode:true },
+    example:'/examples/meme_drake.jpg', templateMode:true, autoFormat:true },
   { id:'meme-fonts', name:'Fonts', icon:'fa-font', desc:'Available fonts for meme endpoints.', params:[], listFonts:true },
   { id:'meme-templates', name:'Templates', icon:'fa-table-cells', desc:'All 208 templates (click to load).', params:[], listTemplates:true },
 ];

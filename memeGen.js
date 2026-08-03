@@ -894,7 +894,7 @@ module.exports = async function memeHandler(req, res) {
       // animated source as a static jpg/png.
       const requested = (format || '').toLowerCase()
       const srcType = detectMediaType(imgBuf)
-      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : (['gif', 'webp', 'mp4'].includes(srcType) ? srcType : 'gif')
+      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : (['gif', 'webp', 'mp4'].includes(srcType) ? srcType : 'mp4')
       const texts = [top || '', bottom || '']
       try {
         const r = await renderAnimated({ bgBuf: imgBuf, texts, cfg: null, font, format: outFmt, overlayBufs })
@@ -927,9 +927,12 @@ module.exports.templateHandler = async function templateHandler(req, res) {
   const { id, top, bottom, third } = req.params
   const { fontsize, format, font, style } = req.query
   let tfile = null
-  // prefer animated .gif when present (or when output format is animated)
-  const wantAnim = (format || '').toLowerCase() === 'gif' || (format || '').toLowerCase() === 'webp' || (format || '').toLowerCase() === 'mp4'
-  const extOrder = wantAnim ? ['gif', 'jpg', 'png'] : ['jpg', 'png', 'gif']
+  // prefer animated .gif when present (or when output format is animated).
+  // Even with NO format param, if the template ships a .gif it should be used
+  // (template supports animation) unless the user explicitly asked jpg/png.
+  const requestedFmt = (format || '').toLowerCase()
+  const wantStatic = requestedFmt === 'jpg' || requestedFmt === 'png'
+  const extOrder = wantStatic ? ['jpg', 'png', 'gif'] : ['gif', 'jpg', 'png']
   for (const ext of extOrder) {
     const cand = path.join(TEMPLATE_DIR, `${id}.${ext}`)
     if (existsSync(cand)) { tfile = cand; break }
@@ -966,7 +969,11 @@ module.exports.templateHandler = async function templateHandler(req, res) {
       } else {
         bgBuf = await fs.promises.readFile(tfile)
       }
-      const animFmt = (format || 'gif').toLowerCase()
+      // Output format follows the template/source type (gif->gif, webp->webp,
+      // mp4->mp4); explicit gif/webp/mp4 overrides; fallback mp4 (not gif).
+      const animFmt = ['gif', 'webp', 'mp4'].includes(requestedFmt)
+        ? requestedFmt
+        : (detectMediaType(bgBuf) || 'mp4')
       const r = await renderAnimated({ bgBuf, texts, cfg, font, format: animFmt, overlayBufs })
       res.set('Content-Type', r.mime)
       res.set('Content-Disposition', `inline; filename="meme_${id}.${r.ext}"`)
