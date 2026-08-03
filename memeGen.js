@@ -150,6 +150,7 @@ function downloadImage(urlStr) {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       return reject(new Error('Only http/https image URLs allowed'))
     }
+    const MAX_INPUT = 10 * 1024 * 1024 // 10MB input cap (gif/webp/mp4/jpg/png)
     const proto = url.protocol === 'https:' ? https : http
     const req = proto.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -159,7 +160,15 @@ function downloadImage(urlStr) {
         return reject(new Error(`Image fetch failed: HTTP ${res.statusCode}`))
       }
       const chunks = []
-      res.on('data', (c) => chunks.push(c))
+      let total = 0
+      res.on('data', (c) => {
+        total += c.length
+        if (total > MAX_INPUT) {
+          req.destroy(new Error(`Input exceeds 10MB limit (got ${Math.round(total / 1024 / 1024)}MB+)`))
+          return
+        }
+        chunks.push(c)
+      })
       res.on('end', () => resolve(Buffer.concat(chunks)))
     })
     req.on('error', reject)
@@ -611,9 +620,10 @@ function isAnimatedWebp(buf) {
   return false
 }
 
-// Decode an animated WebP into cumulative-composed full-size PNG frames.
+// Decode an animated WebP into cumulative-composed full-size WEBP frames.
 // Each ANMF chunk can be a partial frame (x/y offset, smaller w/h) with
 // blend/dispose semantics, so we reconstruct the full canvas like a webp player.
+// Frames are stored as webp (not png) — ~15-20x smaller than png.
 async function extractWebpFrames(buf, maxFrames = 150) {
   const img = new WebP.Image()
   await img.load(buf)
@@ -637,19 +647,21 @@ async function extractWebpFrames(buf, maxFrames = 150) {
     if (!f.blend || i === 0) bgc.clearRect(0, 0, W, H) // blend=false -> replace frame
     const fimg = await loadImage(raw)
     bgc.drawImage(fimg, f.x || 0, f.y || 0, f.width || W, f.height || H)
-    out.push({ buffer: bg.toBuffer('image/png'), delay: f.delay || 0, width: W, height: H })
+    out.push({ buffer: bg.toBuffer('image/webp', { quality: 80 }), delay: f.delay || 0, width: W, height: H })
     if (f.dispose) bgc.clearRect(f.x || 0, f.y || 0, f.width || W, f.height || H)
   }
-  return out.length ? out : [{ buffer: bg.toBuffer('image/png'), delay: 0, width: W, height: H }]
+  return out.length ? out : [{ buffer: bg.toBuffer('image/webp', { quality: 80 }), delay: 0, width: W, height: H }]
 }
 
-async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeconds = 10, maxBytes = 20 * 1024 * 1024, overlayBufs }) {
+async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeconds = 10, maxBytes = 50 * 1024 * 1024, overlayBufs }) {
   const useFormat = (format || 'gif').toLowerCase()
   const tmpDir = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'brat-anim-'))
   try {
     const bgPath = pathMod.join(tmpDir, 'bg_input')
     fsMod.writeFileSync(bgPath, bgBuf)
     // 1) decode bg -> frames (cap duration to maxSeconds)
+    // All intermediate frames are stored as WEBP (much smaller than png).
+    const frameExt = 'webp'
     const framesDir = pathMod.join(tmpDir, 'frames')
     fsMod.mkdirSync(framesDir, { recursive: true })
     let srcFps = 12
@@ -670,13 +682,13 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
       if (decoded.length > maxFrames) {
         const stride = Math.ceil(decoded.length / maxFrames)
         for (let i = 0; i < decoded.length; i += stride) {
-          const p = pathMod.join(framesDir, 'f' + String(frames.length + 1).padStart(4, '0') + '.png')
+          const p = pathMod.join(framesDir, 'f' + String(frames.length + 1).padStart(4, '0') + '.' + frameExt)
           fsMod.writeFileSync(p, decoded[i].buffer)
           frames.push(pathMod.basename(p))
         }
       } else {
         for (let i = 0; i < decoded.length; i++) {
-          const p = pathMod.join(framesDir, 'f' + String(i + 1).padStart(4, '0') + '.png')
+          const p = pathMod.join(framesDir, 'f' + String(i + 1).padStart(4, '0') + '.' + frameExt)
           fsMod.writeFileSync(p, decoded[i].buffer)
           frames.push(pathMod.basename(p))
         }
@@ -700,14 +712,15 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     const rawFrames = Math.round(srcFps * useDur)
     const outFps = rawFrames > maxFrames ? Math.round(srcFps * maxFrames / rawFrames) : srcFps
     srcFps = outFps
-    // extract frames at source (capped) fps
+    // extract frames at source (capped) fps, re-encoded as webp
     execFileSync('ffmpeg', [
       '-y', '-i', bgPath,
       '-t', String(useDur),
       '-vf', 'fps=' + srcFps,
-      pathMod.join(framesDir, 'f%04d.png')
+      '-c:v', 'libwebp',
+      pathMod.join(framesDir, 'f%04d.' + frameExt)
     ], { stdio: 'ignore' })
-    frames = fsMod.readdirSync(framesDir).filter(f => f.endsWith('.png')).sort()
+    frames = fsMod.readdirSync(framesDir).filter(f => f.endsWith('.' + frameExt)).sort()
     }
     const fpsStr = String(srcFps)
     if (!frames.length) throw new Error('no frames decoded from background')
@@ -770,7 +783,7 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
         drawCaption(ctx, texts[1] || '', w, h, fs0, 'bottom', resolveFontFamily(font))
       }
 
-      rendered.push(canvas.toBuffer('image/png'))
+      rendered.push(canvas.toBuffer('image/webp', { quality: 90 }))
     }
 
     // 3) static format fallback (jpg/png): return first frame as static image
@@ -790,18 +803,16 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     }
     // 3) encode output (use image-sequence input, not concat demuxer, for reliability)
     const outPath = pathMod.join(tmpDir, 'out.' + (useFormat === 'webp' ? 'webp' : useFormat === 'mp4' ? 'mp4' : 'gif'))
-    const inPattern = pathMod.join(framesDir, 'f%04d.png')
+    const inPattern = pathMod.join(framesDir, 'f%04d.' + frameExt)
     if (useFormat === 'gif') {
-      // scale to source width (cap 640) — forcing 1000px on small sources blew
-      // up file size past the 20MB cap for long animations
-      const gifW = srcW ? Math.min(srcW, 640) : 640
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${gifW}:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse`, '-loop', '0', outPath], { stdio: 'ignore' })
+      // keep original frame resolution (no upscale)
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', 'split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse', '-loop', '0', outPath], { stdio: 'ignore' })
     } else if (useFormat === 'webp') {
-      const webpW = srcW ? Math.min(srcW, 640) : 640
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${webpW}:-2:flags=lanczos`, '-loop', '0', outPath], { stdio: 'ignore' })
+      // keep original frame resolution
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-loop', '0', outPath], { stdio: 'ignore' })
     } else { // mp4
-      const mp4W = srcW ? Math.min(srcW, 640) : 640
-      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', `scale=${mp4W}:-2`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', outPath], { stdio: 'ignore' })
+      // keep original resolution; ensure even dimensions for libx264
+      execFileSync('ffmpeg', ['-y', '-framerate', fpsStr, '-i', inPattern, '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', outPath], { stdio: 'ignore' })
     }
     const outBuf = fsMod.readFileSync(outPath)
     if (outBuf.length > maxBytes) throw new Error('output exceeds ' + (maxBytes / 1024 / 1024) + 'MB limit')
