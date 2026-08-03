@@ -122,14 +122,24 @@ app.get('/', async (req, res) => {
       '/canvas': 'Generate brat video from text using canvas + emoji support'
     },
     memeParams: {
-      image: 'String - image URL (http/https) to use as base',
+      image: 'String - image/video URL (http/https) to use as base; auto-detects gif/webp/mp4 animation vs static jpg/png',
       top: 'String - top caption (optional)',
       bottom: 'String - bottom caption (optional)',
+      style: 'String - overlay image URL(s), comma-separated for multiple overlays (optional)',
+      layout: 'String - default|top (top draws top text in a dedicated white panel)',
       fontsize: 'Number - optional caption font size in px (default: auto from width)',
       font: 'String - caption font: default|impact|noto|comic|tahoma|tiny|micro (default: default)',
-      format: 'String - output format: jpg|png (default: jpg)'
+      format: 'String - output format: jpg|png|gif|webp|mp4 (default: jpg; animated only when input is animated or style used)'
     },
-    memeTemplateExample: '/meme/afraid/brat%20api/replica%20meme%20generator',
+    memeTemplateExample: '/meme/drake/engineer/powerpoint',
+    memeTemplateParams: {
+      id: 'String - template id (from /meme/templates)',
+      ':text1..:textN': 'Path segments, memegen-encoded (_=space, ~q=?, ~_=underscore); up to template lines',
+      style: 'Query - overlay image URL(s), comma-separated. Fills template overlay slots (N slots = N overlay(s) shown in template list)',
+      font: 'Query - font key (default: thick)',
+      layout: 'Query - default|top',
+      format: 'Query - output format: jpg|png|gif|webp|mp4 (static templates ignore animated formats)'
+    },
     memeExample: '/meme?image=https://api.memegen.link/images/afraid.jpg&top=brat%20api&bottom=replica%20meme%20generator&font=impact&format=jpg',
     bratvidRealtimeParams: {
       text: 'String - text to simulate typing character-by-character',

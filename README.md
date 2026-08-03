@@ -12,10 +12,10 @@ Generate brat-style images, typing-effect videos, canvas animations, and classic
 - **Brat Video** (`/bratvid`) — Per-word typing animation video (MP4/GIF)
 - **Realtime Typing** (`/bratvid-realtime`) — Human-like typing simulation with random per-character delays
 - **Canvas** (`/canvas`) — Canvas-based typing effect with emoji support and multiple fonts
-- **Meme Custom** (`/meme`) — Overlay top/bottom text on any image URL
-- **Meme Templates** (`/meme/:id/:text1/:text2/...`) — 200+ memegen-compatible templates with accurate font/color/positioning from config.yml
+- **Meme Custom** (`/meme`) — Overlay top/bottom text on any image/video URL; supports custom animated backgrounds (gif/webp/mp4) and multi-image overlays
+- **Meme Templates** (`/meme/:id/:text1/:text2/...`) — 200+ memegen-compatible templates with accurate font/color/positioning from config.yml; animated templates (gif/webp/mp4 output) and overlay slots
 - **Meme Fonts** (`/meme/fonts`) — List all available fonts
-- **Meme Templates List** (`/meme/templates`) — Full JSON metadata for all templates
+- **Meme Templates List** (`/meme/templates`) — Full JSON metadata for all templates (`animated`, `overlay` count, `lines`, etc.)
 - **Web Dashboard** (`/dashboard`) — Interactive live playground for all endpoints
 
 ---
@@ -156,35 +156,54 @@ GET /canvas?text=canvas%20effect&theme=white&font=arialnarrow&format=mp4&frameDu
 
 ### Meme Custom (your own image)
 
+```http
+GET /meme?image=https://example.com/photo.jpg&top=TOP%20TEXT&bottom=BOTTOM%20TEXT&font=default&format=jpg
 ```
-GET /meme?image=https://example.com/photo.jpg&top=TOP%20TEXT&bottom=BOTTOM%20TEXT&font=default
-```
+
+| Param | Default | Description |
+|---|---|---|
+| `image` | — | Image or video URL. Auto-detects animated (gif/webp/mp4) vs static (jpg/png) and renders accordingly. |
+| `top` | — | Top caption (optional) |
+| `bottom` | — | Bottom caption (optional) |
+| `style` | — | Overlay image URL(s), comma-separated for multiple overlays (optional) |
+| `layout` | `default` | `default` or `top` (draws top text in a dedicated white panel) |
+| `font` | `default` | Caption font: default, impact, noto, comic, tahoma, tiny, micro |
+| `fontsize` | auto | Caption font size in px |
+| `format` | `jpg` | Output format: `jpg`, `png`, `gif`, `webp`, `mp4` (animated formats only when input is animated) |
 
 ### Meme Template (memegen-compatible)
 
-```
+```http
 GET /meme/drake/left_on_unread/left_on_read
 GET /meme/3hd/Pepperoni/Mushroom/Pineapple
 GET /meme/pigeon/Engineer/PowerPoint/Is_this_Photoshop~q
+GET /meme/bongo/top_text/bottom_text?format=gif&style=https://example.com/overlay.png
 ```
 
-Path segments are memegen-style encoded: `_` = space, `~q` = `?`, `~_` = literal underscore.
+Path segments are memegen-style encoded: `_` = space, `~q` = `?`, `~_` = literal underscore. Supports up to 8 text segments (depending on template `lines`).
 
-Supports up to 8 text segments (depending on template `lines`).
+Query params (optional):
+
+| Param | Description |
+|---|---|
+| `style` | Overlay image URL(s), comma-separated, fills template overlay slots in order |
+| `font` | Font key (default: `thick`) |
+| `layout` | `default` or `top` |
+| `format` | `jpg`, `png`, `gif`, `webp`, `mp4`. Animated templates support all formats; static templates only `jpg`/`png` (animated formats are ignored/fallback to static).
 
 ### Meme Fonts
 
-```
+```http
 GET /meme/fonts
 ```
 
 ### Meme Templates List
 
-```
+```http
 GET /meme/templates
 ```
 
-Returns JSON with `id`, `name`, `lines`, `source`, `keywords`, `example`, `overlay`, `url` for all 200+ templates.
+Returns JSON with `id`, `name`, `lines`, `source`, `keywords`, `example`, `overlay` (slot count), `animated` (whether the template has an animated gif), and `url` for all 200+ templates.
 
 ---
 
@@ -195,8 +214,11 @@ Open `http://localhost:3000/dashboard` (or `/dash`) for an interactive playgroun
 Features:
 - Tab per endpoint with live form inputs
 - Font picker dropdown (populated from `/meme/fonts`)
-- Template picker with searchable card list (cached in localStorage)
+- Template picker: searchable combobox (type to filter), ordered A-Z, shows overlay count
 - Dynamic text inputs per template (1-8 fields based on template `lines`)
+- Auto-generated overlay input fields for templates with overlay slots
+- Template list with search, A-Z order, and example meme thumbnails
+- Format dropdown auto-adjusts: animated templates offer gif/webp/mp4, static templates only jpg/png
 - Example preview images
 - Loading state on Generate button
 - CDN icons (Font Awesome), no emoji
