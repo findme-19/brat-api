@@ -668,9 +668,8 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     let frames = []
     if (isAnimatedWebp(bgBuf)) {
       // ffmpeg's webp decoder can't handle animated webp — use node-webpmux.
-      // Cap frames lower for gif/webp (palette encodes blow up fast) vs mp4.
-      const frameCap = (useFormat === 'mp4') ? 120 : 60
-      const decoded = await extractWebpFrames(bgBuf, frameCap)
+      // Keep ALL source frames (maxFrames 150 is just a safety cap).
+      const decoded = await extractWebpFrames(bgBuf, 150)
       // base fps from average frame delay (webp delay is in ms)
       const delays = decoded.map(f => f.delay).filter(d => d > 0)
       if (delays.length) {
@@ -840,6 +839,20 @@ function isAnimatedBuffer(buf) {
   return false
 }
 
+// Detect the source media type so output can follow the input (webp->webp, gif->gif, mp4->mp4).
+function detectMediaType(buf) {
+  if (!buf || buf.length < 12) return null
+  if (buf.slice(0, 3).toString('ascii') === 'GIF') return 'gif'
+  const riff = buf.slice(0, 4).toString('ascii')
+  const webp = buf.slice(8, 12).toString('ascii')
+  if (riff === 'RIFF' && webp === 'WEBP') return 'webp'
+  const ftyp = buf.slice(4, 8).toString('ascii')
+  if (ftyp === 'ftyp' || buf.readUInt32BE(0) === 0x18 || buf.readUInt32BE(0) === 0x20) return 'mp4'
+  if (buf.slice(0, 2).toString('hex') === 'ffd8') return 'jpg'
+  if (buf.slice(0, 4).toString('hex') === '89504e47') return 'png'
+  return null
+}
+
 module.exports = async function memeHandler(req, res) {
   const { image, top, bottom, fontsize, format, font, layout, style } = req.query
 
@@ -876,10 +889,12 @@ module.exports = async function memeHandler(req, res) {
     const isAnimated = isAnimatedBuffer(imgBuf)
 
     if (isAnimated) {
-      // Output format MUST be animated for animated input — auto-follow the
-      // input (never render an animated source as a static jpg/png).
+      // Output format follows the SOURCE type by default (webp->webp, gif->gif,
+      // mp4->mp4); explicit gif/webp/mp4 query overrides. Never render an
+      // animated source as a static jpg/png.
       const requested = (format || '').toLowerCase()
-      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : 'gif'
+      const srcType = detectMediaType(imgBuf)
+      const outFmt = ['gif', 'webp', 'mp4'].includes(requested) ? requested : (['gif', 'webp', 'mp4'].includes(srcType) ? srcType : 'gif')
       const texts = [top || '', bottom || '']
       try {
         const r = await renderAnimated({ bgBuf: imgBuf, texts, cfg: null, font, format: outFmt, overlayBufs })
