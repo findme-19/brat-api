@@ -1,4 +1,5 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas')
+const WebP = require('node-webpmux')
 const fs = require('fs')
 const { writeFileSync, existsSync, mkdirSync, readFileSync } = fs
 const path = require('path')
@@ -595,6 +596,53 @@ const fsMod = require('fs')
 const os = require('os')
 const pathMod = require('path')
 
+// Detect animated WebP (RIFF .... WEBP with VP8X/ANIM chunks). ffmpeg's webp
+// decoder only handles single-frame webp, so animated webp MUST be decoded via
+// node-webpmux (webpmux re-implementation) instead of ffmpeg.
+function isAnimatedWebp(buf) {
+  if (!buf || buf.length < 20) return false
+  const riff = buf.slice(0, 4).toString('ascii')
+  const webp = buf.slice(8, 12).toString('ascii')
+  if (riff !== 'RIFF' || webp !== 'WEBP') return false
+  // look for the VP8X chunk at offset 12 (flags byte 0 bit 1 = ANIMATION)
+  if (buf.slice(12, 16).toString('ascii') === 'VP8X') {
+    return (buf[20] & 0x02) === 0x02
+  }
+  return false
+}
+
+// Decode an animated WebP into cumulative-composed full-size PNG frames.
+// Each ANMF chunk can be a partial frame (x/y offset, smaller w/h) with
+// blend/dispose semantics, so we reconstruct the full canvas like a webp player.
+async function extractWebpFrames(buf, maxFrames = 150) {
+  const img = new WebP.Image()
+  await img.load(buf)
+  const W = img.width, H = img.height
+  if (!img.hasAnim || !img.frames || !img.frames.length) {
+    // static webp: return single frame
+    return [{ buffer: buf, delay: 0, width: W, height: H }]
+  }
+  // sub-sample if too many frames
+  const total = img.frames.length
+  const stride = Math.max(1, Math.ceil(total / maxFrames))
+  const raws = await img.demux({ buffers: true })
+  const bg = createCanvas(W, H)
+  const bgc = bg.getContext('2d')
+  const out = []
+  for (let i = 0; i < total; i++) {
+    if ((i % stride) !== 0) continue
+    const f = img.frames[i]
+    const raw = raws[i]
+    if (!raw) continue
+    if (!f.blend || i === 0) bgc.clearRect(0, 0, W, H) // blend=false -> replace frame
+    const fimg = await loadImage(raw)
+    bgc.drawImage(fimg, f.x || 0, f.y || 0, f.width || W, f.height || H)
+    out.push({ buffer: bg.toBuffer('image/png'), delay: f.delay || 0, width: W, height: H })
+    if (f.dispose) bgc.clearRect(f.x || 0, f.y || 0, f.width || W, f.height || H)
+  }
+  return out.length ? out : [{ buffer: bg.toBuffer('image/png'), delay: 0, width: W, height: H }]
+}
+
 async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeconds = 10, maxBytes = 20 * 1024 * 1024, overlayBufs }) {
   const useFormat = (format || 'gif').toLowerCase()
   const tmpDir = fsMod.mkdtempSync(pathMod.join(os.tmpdir(), 'brat-anim-'))
@@ -602,6 +650,36 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     const bgPath = pathMod.join(tmpDir, 'bg_input')
     fsMod.writeFileSync(bgPath, bgBuf)
     // 1) decode bg -> frames (cap duration to maxSeconds)
+    const framesDir = pathMod.join(tmpDir, 'frames')
+    fsMod.mkdirSync(framesDir, { recursive: true })
+    let srcFps = 12
+    let frames = []
+    if (isAnimatedWebp(bgBuf)) {
+      // ffmpeg's webp decoder can't handle animated webp — use node-webpmux
+      const decoded = await extractWebpFrames(bgBuf)
+      // base fps from average frame delay (webp delay is in ms)
+      const delays = decoded.map(f => f.delay).filter(d => d > 0)
+      if (delays.length) {
+        const avg = delays.reduce((a, b) => a + b, 0) / delays.length
+        srcFps = avg > 0 ? Math.round(1000 / avg) : 12
+      }
+      srcFps = Math.max(1, Math.min(30, srcFps || 12))
+      const maxFrames = 150
+      if (decoded.length > maxFrames) {
+        const stride = Math.ceil(decoded.length / maxFrames)
+        for (let i = 0; i < decoded.length; i += stride) {
+          const p = pathMod.join(framesDir, 'f' + String(frames.length + 1).padStart(4, '0') + '.png')
+          fsMod.writeFileSync(p, decoded[i].buffer)
+          frames.push(pathMod.basename(p))
+        }
+      } else {
+        for (let i = 0; i < decoded.length; i++) {
+          const p = pathMod.join(framesDir, 'f' + String(i + 1).padStart(4, '0') + '.png')
+          fsMod.writeFileSync(p, decoded[i].buffer)
+          frames.push(pathMod.basename(p))
+        }
+      }
+    } else {
     const probe = execFileSync('ffprobe', [
       '-v', 'error', '-show_entries', 'format=duration:stream=r_frame_rate,nb_frames',
       '-of', 'json', bgPath
@@ -610,7 +688,6 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     const dur = parseFloat(meta.format && meta.format.duration) || 0
     const useDur = Math.min(dur || 10, maxSeconds)
     // parse source frame rate (e.g. "10/1", "18/1", "30000/1001")
-    let srcFps = 12
     const streams = meta.streams || []
     if (streams.length && streams[0].r_frame_rate) {
       const [num, den] = streams[0].r_frame_rate.split('/').map(Number)
@@ -620,17 +697,17 @@ async function renderAnimated({ bgBuf, texts, cfg, font, format = 'gif', maxSeco
     const maxFrames = 150
     const rawFrames = Math.round(srcFps * useDur)
     const outFps = rawFrames > maxFrames ? Math.round(srcFps * maxFrames / rawFrames) : srcFps
-    const fpsStr = String(outFps)
-    const framesDir = pathMod.join(tmpDir, 'frames')
-    fsMod.mkdirSync(framesDir, { recursive: true })
+    srcFps = outFps
     // extract frames at source (capped) fps
     execFileSync('ffmpeg', [
       '-y', '-i', bgPath,
       '-t', String(useDur),
-      '-vf', 'fps=' + fpsStr,
+      '-vf', 'fps=' + srcFps,
       pathMod.join(framesDir, 'f%04d.png')
     ], { stdio: 'ignore' })
-    const frames = fsMod.readdirSync(framesDir).filter(f => f.endsWith('.png')).sort()
+    frames = fsMod.readdirSync(framesDir).filter(f => f.endsWith('.png')).sort()
+    }
+    const fpsStr = String(srcFps)
     if (!frames.length) throw new Error('no frames decoded from background')
     // 2) render text onto each frame
     const rendered = []

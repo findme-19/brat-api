@@ -24,6 +24,7 @@
     "express": "^4.21.2",
     "js-yaml": "^5.2.2",
     "morgan": "^1.10.0",
+    "node-webpmux": "^3.2.1",
     "playwright": "^1.49.1"
   }
 }
